@@ -91,13 +91,17 @@ export async function createTransactionHandler(
           message: "Event is closed or archived",
         },
         EVENT_MEMBERSHIP_REQUIRED: {
-          status: 403,
-          message: "Active event membership is required",
-        },
-        TRANSACTIONS_DISABLED: {
-          status: 403,
-          message: "Transaction permission is disabled",
-        },
+  status: 403,
+  message: "Active event membership is required",
+},
+FINANCIAL_ROLE_FORBIDDEN: {
+  status: 403,
+  message: "Your event role does not permit this financial action",
+},
+TRANSACTIONS_DISABLED: {
+  status: 403,
+  message: "Transaction permission is disabled",
+},
       };
 
       const knownError = errors[error.message];

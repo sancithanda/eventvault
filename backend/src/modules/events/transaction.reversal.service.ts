@@ -1,6 +1,6 @@
 
 import { prisma } from "../../config/prisma";
-
+import { canReverseFinancialTransaction } from "./financial.authorization";
 type ReverseTransactionInput = {
   eventId: string;
   transactionId: string;
@@ -29,6 +29,9 @@ export async function reverseTransaction(
     if (!membership || membership.status !== "ACTIVE") {
       throw new Error("EVENT_MEMBERSHIP_REQUIRED");
     }
+    if (!canReverseFinancialTransaction(membership.role)) {
+  throw new Error("FINANCIAL_ROLE_FORBIDDEN");
+}
 
     if (!membership.transactionEnabled) {
       throw new Error("TRANSACTIONS_DISABLED");

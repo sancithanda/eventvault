@@ -1,6 +1,6 @@
 
 import { prisma } from "../../config/prisma";
-
+import { canCreateFinancialTransaction } from "./financial.authorization";
 type CreateTransactionInput = {
   type: "INCOME" | "EXPENSE";
   amountPaise: number;
@@ -47,6 +47,9 @@ export async function createTransaction(
     if (!membership || membership.status !== "ACTIVE") {
       throw new Error("EVENT_MEMBERSHIP_REQUIRED");
     }
+    if (!canCreateFinancialTransaction(membership.role)) {
+  throw new Error("FINANCIAL_ROLE_FORBIDDEN");
+}
 
     if (!membership.transactionEnabled) {
       throw new Error("TRANSACTIONS_DISABLED");

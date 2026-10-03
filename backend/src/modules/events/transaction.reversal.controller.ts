@@ -11,7 +11,10 @@ export async function reverseTransactionHandler(
   const eventId = req.params.eventId;
   const transactionId = req.params.transactionId;
 
-  if (typeof eventId !== "string" || typeof transactionId !== "string") {
+  if (
+    typeof eventId !== "string" ||
+    typeof transactionId !== "string"
+  ) {
     res.status(400).json({
       success: false,
       message: "Invalid route parameters",
@@ -66,10 +69,17 @@ export async function reverseTransactionHandler(
     }
 
     if (error instanceof Error) {
-      const errors: Record<string, { status: number; message: string }> = {
+      const errors: Record<
+        string,
+        { status: number; message: string }
+      > = {
         EVENT_MEMBERSHIP_REQUIRED: {
           status: 403,
           message: "Active event membership required",
+        },
+        FINANCIAL_ROLE_FORBIDDEN: {
+          status: 403,
+          message: "Your event role does not permit this financial action",
         },
         TRANSACTIONS_DISABLED: {
           status: 403,
@@ -96,7 +106,7 @@ export async function reverseTransactionHandler(
           message: "Transaction not found in this wallet",
         },
         CANNOT_REVERSE_REVERSAL: {
-          status: 400,
+          status: 409,
           message: "A reversal transaction cannot itself be reversed",
         },
         TRANSACTION_ALREADY_REVERSED: {
@@ -114,9 +124,15 @@ export async function reverseTransactionHandler(
         });
         return;
       }
-    }
 
-    console.error("Reverse transaction error:", error);
+      console.error("Unmapped reversal error:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      });
+    } else {
+      console.error("Unknown reversal error:", error);
+    }
 
     res.status(500).json({
       success: false,
