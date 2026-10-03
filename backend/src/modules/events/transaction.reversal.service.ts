@@ -102,9 +102,31 @@ const original = await tx.transaction.findFirst({
     if (original.reversedBy) {
       throw new Error("TRANSACTION_ALREADY_REVERSED");
     }
-
     const reversalType =
-      original.type === "INCOME" ? "EXPENSE" : "INCOME";
+  original.type === "INCOME" ? "EXPENSE" : "INCOME";
+
+// Reversing income spends wallet funds, so check the
+// available balance while the wallet row is locked.
+if (reversalType === "EXPENSE") {
+  const totals = await tx.transaction.groupBy({
+    by: ["type"],
+    where: { walletId: wallet.id },
+    _sum: { amountPaise: true },
+  });
+
+  const income = totals.find((item) => item.type === "INCOME");
+  const expense = totals.find((item) => item.type === "EXPENSE");
+
+  const availableBalance =
+    (income?._sum.amountPaise ?? 0n) -
+    (expense?._sum.amountPaise ?? 0n);
+
+  if (original.amountPaise > availableBalance) {
+    throw new Error("INSUFFICIENT_FUNDS");
+  }
+}
+
+    
 
     // The unique reversesId constraint also protects against duplicate
     // reversals at the database level.

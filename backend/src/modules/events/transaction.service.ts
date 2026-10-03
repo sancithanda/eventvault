@@ -72,6 +72,38 @@ export async function createTransaction(
         throw new Error("EVENT_NOT_ACTIVE");
     }
     // Store the amount as an integer number of paise.
+    // Serialize financial operations for this wallet.
+await tx.$queryRaw`
+  SELECT id
+  FROM wallets
+  WHERE id = ${wallet.id}::uuid
+  FOR UPDATE
+`;
+
+// Calculate the current balance from the immutable ledger.
+// The wallet lock ensures concurrent financial operations
+// cannot both spend the same available funds.
+const totals = await tx.transaction.groupBy({
+  by: ["type"],
+  where: { walletId: wallet.id },
+  _sum: { amountPaise: true },
+});
+
+const income = totals.find((item) => item.type === "INCOME");
+const expense = totals.find((item) => item.type === "EXPENSE");
+
+const availableBalance =
+  (income?._sum.amountPaise ?? 0n) -
+  (expense?._sum.amountPaise ?? 0n);
+
+const requestedAmount = BigInt(input.amountPaise);
+
+if (
+  input.type === "EXPENSE" &&
+  requestedAmount > availableBalance
+) {
+  throw new Error("INSUFFICIENT_FUNDS");
+}
     
 const transaction = await tx.transaction.create({
   data: {

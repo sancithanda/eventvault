@@ -504,6 +504,150 @@ describe("Transaction API", () => {
       `Nested reversal should return 409: ${JSON.stringify(nestedResponse.body)}`,
     ).toBe(409);
   });
+  
+  it("serializes concurrent expenses so the wallet cannot be overspent", async () => {
+    const balanceResponse = await request(app)
+      .get(`${base()}/wallet`)
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(balanceResponse.status).toBe(200);
+
+    const balance = BigInt(balanceResponse.body.data.balancePaise);
+    expect(balance).toBeGreaterThan(1n);
+
+    // Each request asks for slightly more than half the available balance.
+    const amountPaise = Number(balance / 2n + 1n);
+
+    const sendExpense = () =>
+      request(app)
+        .post(`${base()}/transactions`)
+        .set("Authorization", `Bearer ${memberToken}`)
+        .send({
+          type: "EXPENSE",
+          amountPaise,
+          category: "Concurrent Expense Test",
+        });
+
+    const responses = await Promise.all([
+      sendExpense(),
+      sendExpense(),
+    ]);
+
+    expect(
+      responses.map((response) => response.status).sort(),
+    ).toEqual([201, 409]);
+
+    const finalBalanceResponse = await request(app)
+      .get(`${base()}/wallet`)
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(finalBalanceResponse.status).toBe(200);
+    expect(BigInt(finalBalanceResponse.body.data.balancePaise))
+      .toBeGreaterThanOrEqual(0n);
+  });
+
+  it("rejects an expense exceeding the balance without writing ledger or audit entries", async () => {
+    const balanceResponse = await request(app)
+      .get(`${base()}/wallet`)
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(balanceResponse.status).toBe(200);
+
+    const balance = BigInt(balanceResponse.body.data.balancePaise);
+    const amountPaise = Number(balance + 1n);
+
+    const transactionsBefore = await prisma.transaction.count({
+      where: { walletId },
+    });
+
+    const auditEntriesBefore = await prisma.auditLog.count({
+      where: {
+        eventId,
+        action: "TRANSACTION_CREATED",
+      },
+    });
+
+    const response = await request(app)
+      .post(`${base()}/transactions`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        type: "EXPENSE",
+        amountPaise,
+        category: "Insufficient Funds Test",
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("Insufficient wallet balance");
+
+    const transactionsAfter = await prisma.transaction.count({
+      where: { walletId },
+    });
+
+    const auditEntriesAfter = await prisma.auditLog.count({
+      where: {
+        eventId,
+        action: "TRANSACTION_CREATED",
+      },
+    });
+
+    expect(transactionsAfter).toBe(transactionsBefore);
+    expect(auditEntriesAfter).toBe(auditEntriesBefore);
+  });
+
+  it("rejects reversing income when the remaining wallet balance is insufficient", async () => {
+    const transactionId = await createIncomeTransaction(
+      "Insufficient Reversal Test",
+    );
+
+    const balanceResponse = await request(app)
+      .get(`${base()}/wallet`)
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(balanceResponse.status).toBe(200);
+
+    const balance = BigInt(balanceResponse.body.data.balancePaise);
+    expect(balance).toBeGreaterThan(0n);
+
+    // Spend the entire available balance, leaving nothing to reverse
+    // the income transaction into an expense.
+    const spendResponse = await request(app)
+      .post(`${base()}/transactions`)
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        type: "EXPENSE",
+        amountPaise: Number(balance),
+        category: "Balance Exhaustion Test",
+      });
+
+    expect(
+      spendResponse.status,
+      `Could not exhaust wallet balance: ${JSON.stringify(spendResponse.body)}`,
+    ).toBe(201);
+
+    const response = await request(app)
+      .post(`${base()}/transactions/${transactionId}/reverse`)
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ reason: "Insufficient balance reversal test" });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("Insufficient wallet balance");
+
+    const reversal = await prisma.transaction.findFirst({
+      where: { reversesId: transactionId },
+    });
+
+    expect(reversal).toBeNull();
+
+    const audit = await prisma.auditLog.findFirst({
+      where: {
+        eventId,
+        action: "TRANSACTION_REVERSED",
+        entityId: transactionId,
+      },
+    });
+
+    expect(audit).toBeNull();
+  });
 
   it("rejects wallet balance access by a user outside the event", async () => {
     const response = await request(app)

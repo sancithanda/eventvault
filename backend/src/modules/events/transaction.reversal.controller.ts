@@ -113,6 +113,10 @@ export async function reverseTransactionHandler(
           status: 409,
           message: "This transaction has already been reversed",
         },
+        INSUFFICIENT_FUNDS: {
+        status: 409,
+        message: "Insufficient wallet balance",
+},
       };
 
       const mapped = errors[error.message];

@@ -102,6 +102,10 @@ TRANSACTIONS_DISABLED: {
   status: 403,
   message: "Transaction permission is disabled",
 },
+INSUFFICIENT_FUNDS: {
+  status: 409,
+  message: "Insufficient wallet balance",
+},
       };
 
       const knownError = errors[error.message];
