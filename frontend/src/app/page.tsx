@@ -1,9 +1,8 @@
-
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import { apiRequest, type ApiError } from "@/lib/api";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { apiRequest, type ApiError } from "@/lib/api";
 
 type User = {
   id: string;
@@ -16,9 +15,17 @@ type User = {
 type Organization = {
   id: string;
   name: string;
-  description?: string | null;
-  role?: string;
-  createdAt?: string;
+  createdBy: string;
+  createdAt: string;
+  members: Array<{
+    role: string;
+    status: string;
+    joinedAt: string | null;
+  }>;
+  _count: {
+    members: number;
+    events: number;
+  };
 };
 
 type AuthResponse = {
@@ -53,6 +60,20 @@ function getFieldErrors(error: unknown): Record<string, string> {
   return (error as ApiError)?.fields ?? {};
 }
 
+function formatDate(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Recently created";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
 function Brand() {
   return (
     <Link href="/" className="brand" aria-label="EventVault home">
@@ -75,7 +96,9 @@ function Brand() {
           <circle cx="22" cy="16" r="2" fill="#A7F3D0" />
         </svg>
       </span>
-      <span>event<span className="brand-light">vault</span></span>
+      <span>
+        event<span className="brand-light">vault</span>
+      </span>
     </Link>
   );
 }
@@ -155,6 +178,7 @@ export default function Home() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
   const [organizationName, setOrganizationName] = useState("");
   const [creatingOrganization, setCreatingOrganization] = useState(false);
   const [organizationFormOpen, setOrganizationFormOpen] = useState(false);
@@ -165,7 +189,11 @@ export default function Home() {
     try {
       const [meResponse, orgResponse] = await Promise.all([
         apiRequest<MeResponse>("/auth/me", {}, accessToken),
-        apiRequest<OrganizationsResponse>("/organizations", {}, accessToken),
+        apiRequest<OrganizationsResponse>(
+          "/organizations",
+          {},
+          accessToken,
+        ),
       ]);
 
       setUser(meResponse.data.user);
@@ -187,28 +215,29 @@ export default function Home() {
     }
   }, []);
 
-useEffect(() => {
-  let cancelled = false;
+  useEffect(() => {
+    let cancelled = false;
 
-  async function restoreSession() {
-    const savedToken = sessionStorage.getItem("eventvault_token");
+    async function restoreSession() {
+      const savedToken = sessionStorage.getItem("eventvault_token");
 
-    if (savedToken) {
-  setToken(savedToken);
-  await loadDashboard(savedToken);
-}
+      if (savedToken) {
+        setToken(savedToken);
+        await loadDashboard(savedToken);
+      }
 
-    if (!cancelled) {
-      setRestoring(false);
+      if (!cancelled) {
+        setRestoring(false);
+      }
     }
-  }
 
-  void restoreSession();
+    void restoreSession();
 
-  return () => {
-    cancelled = true;
-  };
-}, [loadDashboard]);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDashboard]);
+
   function switchMode(nextMode: Mode) {
     setMode(nextMode);
     setMessage("");
@@ -226,7 +255,11 @@ useEffect(() => {
       if (mode === "register") {
         await apiRequest<AuthResponse>("/auth/register", {
           method: "POST",
-          body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            password,
+          }),
         });
 
         setMode("login");
@@ -237,7 +270,10 @@ useEffect(() => {
 
       const response = await apiRequest<AuthResponse>("/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
       });
 
       const accessToken = response.data.accessToken;
@@ -251,6 +287,7 @@ useEffect(() => {
       setUser(response.data.user);
       setPassword("");
       setMessage("");
+
       await loadDashboard(accessToken);
     } catch (error) {
       setMessage(getErrorMessage(error));
@@ -259,43 +296,51 @@ useEffect(() => {
       setSubmitting(false);
     }
   }
+
   async function handleCreateOrganization(
-  event: FormEvent<HTMLFormElement>,
-) {
-  event.preventDefault();
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
 
-  if (!token || creatingOrganization) {
-    return;
+    if (!token || creatingOrganization) {
+      return;
+    }
+
+    const trimmedName = organizationName.trim();
+
+    if (trimmedName.length < 2 || trimmedName.length > 150) {
+      setFieldErrors({
+        name: "Organization name must be between 2 and 150 characters.",
+      });
+      return;
+    }
+
+    setCreatingOrganization(true);
+    setMessage("");
+    setFieldErrors({});
+
+    try {
+      await apiRequest(
+        "/organizations",
+        {
+          method: "POST",
+          body: JSON.stringify({ name: trimmedName }),
+        },
+        token,
+      );
+
+      setOrganizationName("");
+      setOrganizationFormOpen(false);
+      setMessage("Organization created successfully.");
+
+      await loadDashboard(token);
+    } catch (error) {
+      setMessage(getErrorMessage(error));
+      setFieldErrors(getFieldErrors(error));
+    } finally {
+      setCreatingOrganization(false);
+    }
   }
-
-  const trimmedName = organizationName.trim();
-
-  if (trimmedName.length < 2 || trimmedName.length > 150) {
-    setMessage("Organization name must be between 2 and 150 characters.");
-    return;
-  }
-
-  setCreatingOrganization(true);
-  setMessage("");
-
-  try {
-    await apiRequest("/organizations", {
-      method: "POST",
-      body: JSON.stringify({ name: trimmedName }),
-    }, token);
-
-    setOrganizationName("");
-    setOrganizationFormOpen(false);
-    setMessage("Organization created successfully.");
-
-    await loadDashboard(token);
-  } catch (error) {
-    setMessage(getErrorMessage(error));
-    setFieldErrors(getFieldErrors(error));
-  } finally {
-    setCreatingOrganization(false);
-  }
-}
 
   function logout() {
     sessionStorage.removeItem("eventvault_token");
@@ -304,6 +349,7 @@ useEffect(() => {
     setOrganizations([]);
     setPassword("");
     setMessage("You have been signed out.");
+    setFieldErrors({});
     setMode("login");
   }
 
@@ -317,16 +363,34 @@ useEffect(() => {
   }
 
   if (token && user) {
+    const totalEvents = organizations.reduce(
+      (total, organization) => total + organization._count.events,
+      0,
+    );
+
+    const totalMembers = organizations.reduce(
+      (total, organization) => total + organization._count.members,
+      0,
+    );
+
     return (
       <main className="dashboard-page">
         <header className="topbar">
           <Brand />
+
           <div className="topbar-right">
             <div className="user-chip">
-              <span className="avatar">{user.name.charAt(0).toUpperCase()}</span>
+              <span className="avatar">
+                {user.name.charAt(0).toUpperCase()}
+              </span>
               <span className="user-chip-name">{user.name}</span>
             </div>
-            <button className="logout-button" onClick={logout} type="button">
+
+            <button
+              className="logout-button"
+              onClick={logout}
+              type="button"
+            >
               <Icon name="logout" size={17} />
               <span>Sign out</span>
             </button>
@@ -338,131 +402,222 @@ useEffect(() => {
             <div>
               <span className="eyebrow">YOUR WORKSPACE</span>
               <h1>Good to have you here, {user.name.split(" ")[0]}.</h1>
-              <p>Keep your teams, events, and shared finances in one place.</p>
+              <p>
+                Keep your teams, events, and shared finances in one place.
+              </p>
             </div>
+
             <span className="status-pill">
               <span className="status-dot" />
               Account {user.status.toLowerCase()}
             </span>
           </div>
 
-          {message && <div className="notice">{message}</div>}
+          {message && (
+            <div className="notice" role="status" aria-live="polite">
+              <span>{message}</span>
+              <button
+                type="button"
+                className="notice-dismiss"
+                aria-label="Dismiss notification"
+                onClick={() => setMessage("")}
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           <div className="stat-grid">
             <article className="stat-card">
-              <span className="stat-icon green"><Icon name="users" /></span>
+              <span className="stat-icon green">
+                <Icon name="users" />
+              </span>
               <span className="stat-label">Organizations</span>
               <strong>{organizations.length}</strong>
-              <span className="stat-caption">Your accessible workspaces</span>
+              <span className="stat-caption">
+                Your accessible workspaces
+              </span>
             </article>
+
             <article className="stat-card">
-              <span className="stat-icon blue"><Icon name="calendar" /></span>
+              <span className="stat-icon blue">
+                <Icon name="calendar" />
+              </span>
               <span className="stat-label">Events</span>
-              <strong>—</strong>
-              <span className="stat-caption">Event overview coming next</span>
+              <strong>{totalEvents}</strong>
+              <span className="stat-caption">Across your organizations</span>
             </article>
+
             <article className="stat-card">
-              <span className="stat-icon purple"><Icon name="wallet" /></span>
-              <span className="stat-label">Financial activity</span>
-              <strong>—</strong>
-              <span className="stat-caption">Ledger overview coming next</span>
+              <span className="stat-icon purple">
+                <Icon name="wallet" />
+              </span>
+              <span className="stat-label">Organization memberships</span>
+              <strong>{totalMembers}</strong>
+              <span className="stat-caption">
+                Active memberships across workspaces
+              </span>
             </article>
           </div>
 
           <section className="organizations-section">
             <div className="section-heading">
-  <div>
-    <span className="eyebrow">TEAM MANAGEMENT</span>
-    <h2>Your organizations</h2>
-    <p>Organizations you have access to appear here.</p>
-  </div>
+              <div>
+                <span className="eyebrow">TEAM MANAGEMENT</span>
+                <h2>Your organizations</h2>
+                <p>
+                  Organizations you have access to appear here.
+                </p>
+              </div>
 
-  <div className="section-actions">
-    <span className="count-badge">{organizations.length} total</span>
-    <button
-      className="primary-button"
-      type="button"
-      onClick={() => {
-        setOrganizationFormOpen((open) => !open);
-        setMessage("");
-      }}
-    >
-      {organizationFormOpen ? "Cancel" : "+ Create organization"}
-    </button>
-  </div>
-</div>
+              <div className="section-actions">
+                <span className="count-badge">
+                  {organizations.length} total
+                </span>
 
-{organizationFormOpen && (
-  <form
-    className="organization-form"
-    onSubmit={handleCreateOrganization}
-  >
-    <label htmlFor="organization-name">Organization name</label>
-    <input
-      id="organization-name"
-      name="organizationName"
-      type="text"
-      value={organizationName}
-      onChange={(event) => setOrganizationName(event.target.value)}
-      placeholder="e.g. College Fest Committee"
-      minLength={2}
-      maxLength={150}
-      required
-      disabled={creatingOrganization}
-    />
-    <p>Choose a name between 2 and 150 characters.</p>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => {
+                    setOrganizationFormOpen((open) => !open);
+                    setFieldErrors({});
+                    setMessage("");
+                  }}
+                >
+                  {organizationFormOpen
+                    ? "Cancel"
+                    : "+ Create organization"}
+                </button>
+              </div>
+            </div>
 
-    {fieldErrors.name && (
-      <p className="field-error">{fieldErrors.name}</p>
-    )}
+            {organizationFormOpen && (
+              <form
+                className="organization-form"
+                onSubmit={handleCreateOrganization}
+              >
+                <label htmlFor="organization-name">
+                  Organization name
+                </label>
 
-    <button
-      className="primary-button"
-      type="submit"
-      disabled={creatingOrganization}
-    >
-      {creatingOrganization ? "Creating..." : "Create organization"}
-    </button>
-  </form>
-)}
+                <input
+                  id="organization-name"
+                  name="organizationName"
+                  type="text"
+                  value={organizationName}
+                  onChange={(event) => {
+                    setOrganizationName(event.target.value);
+                    setFieldErrors((current) => ({
+                      ...current,
+                      name: "",
+                    }));
+                  }}
+                  placeholder="e.g. College Fest Committee"
+                  minLength={2}
+                  maxLength={150}
+                  required
+                  disabled={creatingOrganization}
+                />
 
-            {dashboardLoading ? (
+                <p>Choose a name between 2 and 150 characters.</p>
+
+                {fieldErrors.name && (
+                  <p className="field-error">{fieldErrors.name}</p>
+                )}
+
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={creatingOrganization}
+                >
+                  {creatingOrganization
+                    ? "Creating..."
+                    : "Create organization"}
+                </button>
+              </form>
+            )}
+
+            <div className="section-meta">
+              <span className="count-badge">
+                {organizations.length}{" "}
+                {organizations.length === 1
+                  ? "organization"
+                  : "organizations"}
+              </span>
+
+              {dashboardLoading && (
+                <span className="subtle-status">
+                  Refreshing workspace…
+                </span>
+              )}
+            </div>
+
+            {dashboardLoading && organizations.length === 0 ? (
               <div className="empty-panel">
                 <span className="spinner" />
                 <p>Loading your workspace…</p>
               </div>
             ) : organizations.length === 0 ? (
               <div className="empty-panel">
-                <span className="empty-icon"><Icon name="users" size={25} /></span>
+                <span className="empty-icon">
+                  <Icon name="users" size={25} />
+                </span>
                 <h3>Your workspace starts here</h3>
                 <p>
-                  You are signed in, but you do not belong to an organization
-                  yet. Organization creation will be the next dashboard feature.
+                  Create an organization to start managing its events and
+                  shared finances.
                 </p>
               </div>
             ) : (
               <div className="organization-grid">
                 {organizations.map((organization) => (
-                  <article className="organization-card" key={organization.id}>
+                  <Link
+                    href={`/organizations/${organization.id}`}
+                    className="organization-card"
+                    key={organization.id}
+                  >
                     <div className="organization-card-top">
                       <span className="organization-icon">
                         <Icon name="users" size={22} />
                       </span>
-                      {organization.role && (
-                        <span className="role-badge">
-                          {organization.role.replaceAll("_", " ")}
-                        </span>
-                      )}
-                    </div>
-                    <h3>{organization.name}</h3>
-                    <p>{organization.description || "Organization workspace"}</p>
-                    <div className="organization-footer">
-                      <span><Icon name="shield" size={15} /> Access controlled</span>
-                      <span className="organization-id" title={organization.id}>
-                        ID · {organization.id.slice(0, 8)}
+
+                      <span className="role-badge">
+                        {(
+                          organization.members[0]?.role ?? "MEMBER"
+                        ).replaceAll("_", " ")}
                       </span>
                     </div>
-                  </article>
+
+                    <h3>{organization.name}</h3>
+                    <p>Organization workspace</p>
+
+                    <div className="organization-footer">
+                      <span>
+                        <Icon name="users" size={15} />
+                        {organization._count.members}{" "}
+                        {organization._count.members === 1
+                          ? "member"
+                          : "members"}
+                      </span>
+
+                      <span>
+                        <Icon name="calendar" size={15} />
+                        {organization._count.events}{" "}
+                        {organization._count.events === 1
+                          ? "event"
+                          : "events"}
+                      </span>
+                    </div>
+
+                    <div className="organization-card-action">
+                      <span>Open workspace</span>
+                      <Icon name="arrow" size={16} />
+                    </div>
+
+                    <div className="organization-card-date">
+                      Created {formatDate(organization.createdAt)}
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -471,8 +626,9 @@ useEffect(() => {
           <div className="security-note">
             <Icon name="shield" size={19} />
             <p>
-              <strong>Your finances deserve an audit trail.</strong>
-              {" "}EventVault uses controlled access and recorded financial transactions.
+              <strong>Your finances deserve an audit trail.</strong>{" "}
+              EventVault uses controlled access and recorded financial
+              transactions.
             </p>
           </div>
         </section>
@@ -485,42 +641,84 @@ useEffect(() => {
       <section className="auth-story">
         <div className="story-content">
           <Brand />
+
           <div className="story-copy">
-            <span className="eyebrow story-eyebrow">SHARED MONEY. CLEAR RECORDS.</span>
-            <h1>Good events deserve <span>better finances.</span></h1>
+            <span className="eyebrow story-eyebrow">
+              SHARED MONEY. CLEAR RECORDS.
+            </span>
+
+            <h1>
+              Good events deserve <span>better finances.</span>
+            </h1>
+
             <p>
               Coordinate your team, manage event funds, and keep every
-              transaction accountable — without losing track of a single rupee.
+              transaction accountable — without losing track of a single
+              rupee.
             </p>
+
             <div className="feature-list">
               <div className="feature-item">
-                <span className="feature-icon"><Icon name="wallet" /></span>
-                <div><strong>One financial source of truth</strong><span>Track transactions in a shared ledger.</span></div>
+                <span className="feature-icon">
+                  <Icon name="wallet" />
+                </span>
+                <div>
+                  <strong>One financial source of truth</strong>
+                  <span>Track transactions in a shared ledger.</span>
+                </div>
               </div>
+
               <div className="feature-item">
-                <span className="feature-icon"><Icon name="users" /></span>
-                <div><strong>Access by role</strong><span>Give the right people the right permissions.</span></div>
+                <span className="feature-icon">
+                  <Icon name="users" />
+                </span>
+                <div>
+                  <strong>Access by role</strong>
+                  <span>
+                    Give the right people the right permissions.
+                  </span>
+                </div>
               </div>
+
               <div className="feature-item">
-                <span className="feature-icon"><Icon name="shield" /></span>
-                <div><strong>Accountability built in</strong><span>Keep a record of financial actions.</span></div>
+                <span className="feature-icon">
+                  <Icon name="shield" />
+                </span>
+                <div>
+                  <strong>Accountability built in</strong>
+                  <span>Keep a record of financial actions.</span>
+                </div>
               </div>
             </div>
           </div>
+
           <div className="story-footer">
-            <span className="footer-dot" /> Built for teams that value transparency.
+            <span className="footer-dot" /> Built for teams that value
+            transparency.
           </div>
         </div>
+
         <div className="story-decoration decoration-one" />
         <div className="story-decoration decoration-two" />
       </section>
 
       <section className="auth-panel">
-        <div className="mobile-brand"><Brand /></div>
+        <div className="mobile-brand">
+          <Brand />
+        </div>
+
         <div className="auth-card">
           <div className="auth-heading">
-            <span className="eyebrow">{mode === "login" ? "WELCOME BACK" : "GET STARTED"}</span>
-            <h2>{mode === "login" ? "Sign in to EventVault" : "Create your account"}</h2>
+            <span className="eyebrow">
+              {mode === "login" ? "WELCOME BACK" : "GET STARTED"}
+            </span>
+
+            <h2>
+              {mode === "login"
+                ? "Sign in to EventVault"
+                : "Create your account"}
+            </h2>
+
             <p>
               {mode === "login"
                 ? "Access your organizations and event finances."
@@ -528,7 +726,11 @@ useEffect(() => {
             </p>
           </div>
 
-          <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
+          <div
+            className="auth-tabs"
+            role="tablist"
+            aria-label="Authentication mode"
+          >
             <button
               className={mode === "login" ? "auth-tab active" : "auth-tab"}
               onClick={() => switchMode("login")}
@@ -538,8 +740,11 @@ useEffect(() => {
             >
               Sign in
             </button>
+
             <button
-              className={mode === "register" ? "auth-tab active" : "auth-tab"}
+              className={
+                mode === "register" ? "auth-tab active" : "auth-tab"
+              }
               onClick={() => switchMode("register")}
               type="button"
               role="tab"
@@ -550,7 +755,9 @@ useEffect(() => {
           </div>
 
           {message && (
-            <div className="notice" role="status">{message}</div>
+            <div className="notice" role="status">
+              {message}
+            </div>
           )}
 
           <form className="auth-form" onSubmit={handleSubmit} noValidate>
@@ -560,14 +767,24 @@ useEffect(() => {
                 <input
                   autoComplete="name"
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setFieldErrors((current) => ({
+                      ...current,
+                      name: "",
+                    }));
+                  }}
                   placeholder="Your name"
                   minLength={2}
                   maxLength={100}
                   required
                   aria-invalid={Boolean(fieldErrors.name)}
                 />
-                {fieldErrors.name && <small className="field-error">{fieldErrors.name}</small>}
+                {fieldErrors.name && (
+                  <small className="field-error">
+                    {fieldErrors.name}
+                  </small>
+                )}
               </label>
             )}
 
@@ -577,68 +794,130 @@ useEffect(() => {
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setFieldErrors((current) => ({
+                    ...current,
+                    email: "",
+                  }));
+                }}
                 placeholder="you@example.com"
                 maxLength={255}
                 required
                 aria-invalid={Boolean(fieldErrors.email)}
               />
-              {fieldErrors.email && <small className="field-error">{fieldErrors.email}</small>}
+              {fieldErrors.email && (
+                <small className="field-error">
+                  {fieldErrors.email}
+                </small>
+              )}
             </label>
 
             <label className="form-field">
               <span>Password</span>
+
               <div className="password-wrap">
                 <input
                   type={showPassword ? "text" : "password"}
-                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  autoComplete={
+                    mode === "login"
+                      ? "current-password"
+                      : "new-password"
+                  }
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={mode === "register" ? "At least 12 characters" : "Enter your password"}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setFieldErrors((current) => ({
+                      ...current,
+                      password: "",
+                    }));
+                  }}
+                  placeholder={
+                    mode === "register"
+                      ? "At least 12 characters"
+                      : "Enter your password"
+                  }
                   minLength={mode === "register" ? 12 : undefined}
                   maxLength={128}
                   required
                   aria-invalid={Boolean(fieldErrors.password)}
                 />
+
                 <button
                   className="password-toggle"
                   type="button"
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() =>
+                    setShowPassword((visible) => !visible)
+                  }
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
                 >
                   {showPassword ? "Hide" : "Show"}
                 </button>
               </div>
-              {fieldErrors.password && <small className="field-error">{fieldErrors.password}</small>}
+
+              {fieldErrors.password && (
+                <small className="field-error">
+                  {fieldErrors.password}
+                </small>
+              )}
+
               {mode === "register" && (
-                <small className="field-hint">Use 12–128 characters.</small>
+                <small className="field-hint">
+                  Use 12–128 characters.
+                </small>
               )}
             </label>
 
-            <button className="submit-button" type="submit" disabled={submitting}>
+            <button
+              className="submit-button"
+              type="submit"
+              disabled={submitting}
+            >
               {submitting ? (
-                <><span className="button-spinner" /> {mode === "login" ? "Signing in…" : "Creating account…"}</>
+                <>
+                  <span className="button-spinner" />
+                  {mode === "login"
+                    ? "Signing in…"
+                    : "Creating account…"}
+                </>
               ) : (
-                <>{mode === "login" ? "Sign in to your account" : "Create account"} <Icon name="arrow" size={18} /></>
+                <>
+                  {mode === "login"
+                    ? "Sign in to your account"
+                    : "Create account"}
+                  <Icon name="arrow" size={18} />
+                </>
               )}
             </button>
           </form>
 
           <div className="auth-assurance">
             <Icon name="shield" size={17} />
-            <span>Your account is protected by authenticated API access.</span>
+            <span>
+              Your account is protected by authenticated API access.
+            </span>
           </div>
+
           <p className="auth-switch">
-            {mode === "login" ? "New to EventVault?" : "Already have an account?"}{" "}
+            {mode === "login"
+              ? "New to EventVault?"
+              : "Already have an account?"}{" "}
             <button
               type="button"
-              onClick={() => switchMode(mode === "login" ? "register" : "login")}
+              onClick={() =>
+                switchMode(mode === "login" ? "register" : "login")
+              }
             >
               {mode === "login" ? "Create an account" : "Sign in"}
             </button>
           </p>
         </div>
-        <footer className="panel-footer">© {new Date().getFullYear()} EventVault</footer>
+
+        <footer className="panel-footer">
+          © {new Date().getFullYear()} EventVault
+        </footer>
       </section>
     </main>
   );
