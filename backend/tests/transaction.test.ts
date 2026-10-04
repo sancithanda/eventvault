@@ -394,6 +394,101 @@ describe("Transaction API", () => {
     expect(response.body.data).toHaveProperty("totalExpensePaise");
     expect(response.body.data).toHaveProperty("transactionCount");
   });
+    it("rejects transaction listing through a mismatched organization URL", async () => {
+    const wrongOrganizationId =
+      "00000000-0000-4000-8000-000000000001";
+
+    const response = await request(app)
+      .get(
+        `/api/v1/organizations/${wrongOrganizationId}/events/${eventId}/transactions`,
+      )
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe(
+      "Event not found in this organization",
+    );
+  });
+
+  it("rejects wallet balance access through a mismatched organization URL", async () => {
+    const wrongOrganizationId =
+      "00000000-0000-4000-8000-000000000001";
+
+    const response = await request(app)
+      .get(
+        `/api/v1/organizations/${wrongOrganizationId}/events/${eventId}/wallet`,
+      )
+      .set("Authorization", `Bearer ${memberToken}`);
+
+    expect(response.status).toBe(404);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe(
+      "Event not found in this organization",
+    );
+  });
+
+  it("rejects transaction creation through a mismatched organization URL", async () => {
+    const wrongOrganizationId =
+      "00000000-0000-4000-8000-000000000001";
+
+    const beforeCount = await prisma.transaction.count({
+      where: { walletId },
+    });
+
+    const response = await request(app)
+      .post(
+        `/api/v1/organizations/${wrongOrganizationId}/events/${eventId}/transactions`,
+      )
+      .set("Authorization", `Bearer ${memberToken}`)
+      .send({
+        type: "INCOME",
+        amountPaise: 1000,
+        category: "Wrong Organization Test",
+        description: "Must not be created",
+      });
+
+    expect(response.status).toBe(404);
+    expect(response.body.success).toBe(false);
+
+    const afterCount = await prisma.transaction.count({
+      where: { walletId },
+    });
+
+    expect(afterCount).toBe(beforeCount);
+  });
+
+  it("rejects transaction reversal through a mismatched organization URL", async () => {
+    const wrongOrganizationId =
+      "00000000-0000-4000-8000-000000000001";
+
+    const beforeCount = await prisma.transaction.count({
+      where: { walletId },
+    });
+
+    const response = await request(app)
+      .post(
+        `/api/v1/organizations/${wrongOrganizationId}/events/${eventId}/transactions/${originalTransactionId}/reverse`,
+      )
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ reason: "Wrong organization regression test" });
+
+    expect(response.status).toBe(404);
+    expect(response.body.success).toBe(false);
+
+    const afterCount = await prisma.transaction.count({
+      where: { walletId },
+    });
+
+    expect(afterCount).toBe(beforeCount);
+
+    const original = await prisma.transaction.findUnique({
+      where: { id: originalTransactionId },
+      select: { reversedBy: { select: { id: true } } },
+    });
+
+    expect(original?.reversedBy).toBeNull();
+  });
 
   it("rejects reversal requests with an invalid reason", async () => {
     const response = await request(app)
