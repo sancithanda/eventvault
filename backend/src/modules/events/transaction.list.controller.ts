@@ -16,8 +16,20 @@ export async function listTransactionsHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
+  const organizationId = req.params.organizationId;
   const eventId = req.params.eventId;
   const userId = req.userId;
+
+  if (
+    typeof organizationId !== "string" ||
+    organizationId.length === 0
+  ) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid organization ID",
+    });
+    return;
+  }
 
   if (typeof eventId !== "string" || eventId.length === 0) {
     res.status(400).json({
@@ -48,6 +60,7 @@ export async function listTransactionsHandler(
 
   try {
     const result = await listTransactions({
+      organizationId,
       eventId,
       userId,
       ...parsed.data,
@@ -59,6 +72,14 @@ export async function listTransactionsHandler(
     });
   } catch (error: unknown) {
     if (error instanceof Error) {
+      if (error.message === "EVENT_NOT_FOUND") {
+        res.status(404).json({
+          success: false,
+          message: "Event not found in this organization",
+        });
+        return;
+      }
+
       if (error.message === "EVENT_MEMBERSHIP_REQUIRED") {
         res.status(403).json({
           success: false,

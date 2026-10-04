@@ -2,14 +2,31 @@
 import { prisma } from "../../config/prisma";
 
 type WalletBalanceInput = {
+  organizationId: string;
   eventId: string;
   userId: string;
 };
 
 export async function getWalletBalance({
+  organizationId,
   eventId,
   userId,
 }: WalletBalanceInput) {
+  // Verify that the event belongs to the requested organization.
+  const event = await prisma.event.findFirst({
+    where: {
+      id: eventId,
+      organizationId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!event) {
+    throw new Error("EVENT_NOT_FOUND");
+  }
+
   // Only active event members may view the wallet balance.
   const membership = await prisma.eventMember.findUnique({
     where: {

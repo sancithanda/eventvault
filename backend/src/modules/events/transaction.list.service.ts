@@ -2,6 +2,7 @@
 import { prisma } from "../../config/prisma";
 
 type ListTransactionsInput = {
+  organizationId: string;
   eventId: string;
   userId: string;
   page: number;
@@ -14,6 +15,7 @@ export async function listTransactions(
   input: ListTransactionsInput,
 ) {
   const {
+    organizationId,
     eventId,
     userId,
     page,
@@ -21,6 +23,21 @@ export async function listTransactions(
     type,
     category,
   } = input;
+
+  // Verify that the event belongs to the requested organization.
+  const event = await prisma.event.findFirst({
+    where: {
+      id: eventId,
+      organizationId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!event) {
+    throw new Error("EVENT_NOT_FOUND");
+  }
 
   // Confirm that the requester is an active event member.
   const membership = await prisma.eventMember.findUnique({

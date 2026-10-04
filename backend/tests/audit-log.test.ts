@@ -205,15 +205,16 @@ describe("Audit Log API", () => {
     expect(response.body.data.pagination.total).toBe(4);
   });
 
-  it("allows an active event member to view audit logs", async () => {
-    const response = await request(app)
-      .get(`${base()}/audit-logs`)
-      .set("Authorization", `Bearer ${memberToken}`);
+it("denies a regular active event member from viewing audit logs", async () => {
+  const response = await request(app)
+    .get(`${base()}/audit-logs`)
+    .set("Authorization", `Bearer ${memberToken}`);
 
-    expect(response.status).toBe(200);
-    expect(response.body.data.auditLogs).toHaveLength(4);
-  });
-
+  expect(response.status).toBe(403);
+  expect(response.body.message).toBe(
+    "You do not have permission to view these audit logs",
+  );
+});
   it("denies users without active membership", async () => {
     const response = await request(app)
       .get(`${base()}/audit-logs`)

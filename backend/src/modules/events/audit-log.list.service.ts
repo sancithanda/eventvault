@@ -36,6 +36,7 @@ export async function listAuditLogs(input: ListAuditLogsInput) {
         },
       },
       select: {
+        role: true,
         status: true,
       },
     }),
@@ -47,16 +48,27 @@ export async function listAuditLogs(input: ListAuditLogsInput) {
         },
       },
       select: {
+        role: true,
         status: true,
       },
     }),
   ]);
 
-  const canViewAuditLogs =
-    organizationMembership?.status === "ACTIVE" ||
-    eventMembership?.status === "ACTIVE";
+  const isOrganizationAdmin =
+    organizationMembership?.status === "ACTIVE" &&
+    (
+      organizationMembership.role === "OWNER" ||
+      organizationMembership.role === "ADMIN"
+    );
 
-  if (!canViewAuditLogs) {
+  const isAuthorizedEventMember =
+    eventMembership?.status === "ACTIVE" &&
+    (
+      eventMembership.role === "ADMIN" ||
+      eventMembership.role === "FINANCE_MANAGER"
+    );
+
+  if (!isOrganizationAdmin && !isAuthorizedEventMember) {
     throw new Error("AUDIT_ACCESS_DENIED");
   }
 

@@ -8,20 +8,25 @@ export async function createTransactionHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
+  const organizationId = req.params.organizationId;
   const eventId = req.params.eventId;
-  if (typeof eventId !== "string" || eventId.length === 0) {
-  res.status(400).json({
-    success: false,
-    message: "Invalid event ID",
-  });
-  return;
-}
   const userId = req.userId;
 
-  if (!eventId) {
+  if (
+    typeof organizationId !== "string" ||
+    organizationId.length === 0
+  ) {
     res.status(400).json({
       success: false,
-      message: "Event ID is required",
+      message: "Invalid organization ID",
+    });
+    return;
+  }
+
+  if (typeof eventId !== "string" || eventId.length === 0) {
+    res.status(400).json({
+      success: false,
+      message: "Invalid event ID",
     });
     return;
   }
@@ -47,6 +52,7 @@ export async function createTransactionHandler(
 
   try {
     const transaction = await createTransaction(
+      organizationId,
       eventId,
       userId,
       parsed.data,
@@ -80,7 +86,7 @@ export async function createTransactionHandler(
         },
         EVENT_NOT_FOUND: {
           status: 404,
-          message: "Event not found",
+          message: "Event not found in this organization",
         },
         WALLET_NOT_ACTIVE: {
           status: 409,
@@ -91,21 +97,21 @@ export async function createTransactionHandler(
           message: "Event is closed or archived",
         },
         EVENT_MEMBERSHIP_REQUIRED: {
-  status: 403,
-  message: "Active event membership is required",
-},
-FINANCIAL_ROLE_FORBIDDEN: {
-  status: 403,
-  message: "Your event role does not permit this financial action",
-},
-TRANSACTIONS_DISABLED: {
-  status: 403,
-  message: "Transaction permission is disabled",
-},
-INSUFFICIENT_FUNDS: {
-  status: 409,
-  message: "Insufficient wallet balance",
-},
+          status: 403,
+          message: "Active event membership is required",
+        },
+        FINANCIAL_ROLE_FORBIDDEN: {
+          status: 403,
+          message: "Your event role does not permit this financial action",
+        },
+        TRANSACTIONS_DISABLED: {
+          status: 403,
+          message: "Transaction permission is disabled",
+        },
+        INSUFFICIENT_FUNDS: {
+          status: 409,
+          message: "Insufficient wallet balance",
+        },
       };
 
       const knownError = errors[error.message];

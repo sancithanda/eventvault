@@ -8,10 +8,12 @@ export async function reverseTransactionHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
+  const organizationId = req.params.organizationId;
   const eventId = req.params.eventId;
   const transactionId = req.params.transactionId;
 
   if (
+    typeof organizationId !== "string" ||
     typeof eventId !== "string" ||
     typeof transactionId !== "string"
   ) {
@@ -43,6 +45,7 @@ export async function reverseTransactionHandler(
 
   try {
     const reversal = await reverseTransaction({
+      organizationId,
       eventId,
       transactionId,
       userId: req.userId,
@@ -57,7 +60,7 @@ export async function reverseTransactionHandler(
         amountPaise: reversal.amountPaise.toString(),
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === "P2002") {
         res.status(409).json({
@@ -95,7 +98,7 @@ export async function reverseTransactionHandler(
         },
         EVENT_NOT_FOUND: {
           status: 404,
-          message: "Event not found",
+          message: "Event not found in this organization",
         },
         EVENT_NOT_ACTIVE: {
           status: 409,
@@ -114,9 +117,9 @@ export async function reverseTransactionHandler(
           message: "This transaction has already been reversed",
         },
         INSUFFICIENT_FUNDS: {
-        status: 409,
-        message: "Insufficient wallet balance",
-},
+          status: 409,
+          message: "Insufficient wallet balance",
+        },
       };
 
       const mapped = errors[error.message];
