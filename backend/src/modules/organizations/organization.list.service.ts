@@ -22,10 +22,10 @@ export async function listUserOrganizations(userId: string) {
           status: "ACTIVE",
         },
         select: {
-          role: true,
-          status: true,
-          joinedAt: true,
-        },
+        role: true,
+        status: true,
+        createdAt: true,
+},
       },
       _count: {
         select: {

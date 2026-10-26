@@ -23,14 +23,13 @@ export async function createOrganization(
     });
 
     await tx.organizationMember.create({
-      data: {
-        organizationId: organization.id,
-        userId,
-        role: "OWNER",
-        status: "ACTIVE",
-        joinedAt: new Date(),
-      },
-    });
+  data: {
+    organizationId: organization.id,
+    userId,
+    role: "OWNER",
+    status: "ACTIVE",
+  },
+});
 
     return organization;
   });

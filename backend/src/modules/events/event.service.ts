@@ -21,13 +21,7 @@ export async function createEvent(
           : undefined,
         currency: input.currency,
         status: "DRAFT",
-        wallet: {
-          create: {
-            name: "Main Wallet",
-            currency: input.currency,
-            status: "ACTIVE",
-          },
-        },
+        
       },
       select: {
         id: true,
@@ -39,15 +33,7 @@ export async function createEvent(
         status: true,
         currency: true,
         createdAt: true,
-        wallet: {
-          select: {
-            id: true,
-            name: true,
-            currency: true,
-            status: true,
-            createdAt: true,
-          },
-        },
+        
       },
     });
 

@@ -74,6 +74,7 @@ model Organization {
   name      String   @db.VarChar(150)
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   creator User                 @relation(fields: [createdBy], references: [id], onDelete: Restrict)
   members OrganizationMember[]

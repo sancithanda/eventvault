@@ -38,14 +38,7 @@ export async function listOrganizationEvents(
       status: true,
       currency: true,
       createdAt: true,
-      wallet: {
-        select: {
-          id: true,
-          name: true,
-          currency: true,
-          status: true,
-        },
-      },
+      
       _count: {
         select: {
           members: true,

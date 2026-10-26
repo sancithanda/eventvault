@@ -548,7 +548,11 @@ useEffect(() => {
           ) : (
             <div className="workspace-event-grid">
               {events.map((item) => (
-                <article className="workspace-event-card" key={item.id}>
+                <Link
+  className="workspace-event-card"
+  href={`/organizations/${organizationId}/events/${item.id}`}
+  key={item.id}
+>
                   <div className="workspace-event-card-top">
                     <div className="organization-icon" aria-hidden="true">
                       <span>EV</span>
@@ -597,7 +601,7 @@ useEffect(() => {
                       ID: {item.id.slice(0, 8)}
                     </span>
                   </div>
-                </article>
+                </Link>
               ))}
             </div>
           )}
